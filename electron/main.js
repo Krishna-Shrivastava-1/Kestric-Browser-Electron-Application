@@ -88,30 +88,36 @@
 
 
 
-
 // main.js
 const { app, BrowserWindow, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-// 1. CHROMIUM FLAGS
+// 1. STABLE CHROMIUM FLAGS
 app.enableSandbox();
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
-app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
 
-// Keep PiP/Meet video running in background
+// Keep PiP/Meet video running smoothly in background (SAFE FLAGS)
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
-app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
-app.commandLine.appendSwitch('use-fake-ui-for-media-stream', 'false');
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'default_public_interface_only');
 
-// 2. CRASH DIAGNOSTICS
+// Linux PipeWire screen capture only
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
+}
+
+// 2. DIAGNOSTICS & GPU CRASH RECOVERY
 app.on('child-process-gone', (_e, d) =>
   console.error('[child-process-gone]', d.type, d.reason, d.exitCode));
+
 app.on('render-process-gone', (_e, _wc, d) =>
   console.error('[render-process-gone]', d.reason));
+
+// Detect if GPU crashes (this catches the invisible glitch)
+app.on('gpu-process-gone', (_e, d) => {
+  console.error('[gpu-process-gone] Graphics driver crashed:', d.details);
+});
 
 const { createMainWindow, getMainWindow } = require('./main/windowManager');
 const { registerWindowIpc } = require('./main/ipc/windowIpc');
@@ -164,7 +170,6 @@ app.whenReady().then(() => {
   // --- BACKGROUND SILENT AUTO-UPDATER (CHROME STYLE) ---
   if (app.isPackaged) {
     autoUpdater.autoDownload = true;
-    // Installs silently in background when the user closes the app:
     autoUpdater.autoInstallOnAppQuit = true;
 
     // Check immediately on startup
@@ -176,7 +181,6 @@ app.whenReady().then(() => {
     }, 15 * 60 * 1000);
   }
 
-  // Log when update is ready — will NOT force close the app
   autoUpdater.on('update-downloaded', () => {
     console.log('Update ready. Will install automatically on quit.');
   });
