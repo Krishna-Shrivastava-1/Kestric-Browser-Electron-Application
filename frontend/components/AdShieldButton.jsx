@@ -26,7 +26,7 @@ export default function AdShieldButton({ isEnabled = true }) {
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        title="Zenith Shields: Ad & Tracker Blocker"
+        title="Kestric Shields: Ad & Tracker Blocker"
         className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
           isEnabled
             ? 'text-blue-400 hover:bg-blue-500/10'
@@ -42,7 +42,7 @@ export default function AdShieldButton({ isEnabled = true }) {
           <div className="flex items-center justify-between pb-2 border-b border-zinc-700/50">
             <div className="flex items-center gap-2">
               <ShieldCheck size={16} className="text-blue-400" />
-              <span className="text-xs font-semibold text-white">Zenith Shields</span>
+              <span className="text-xs font-semibold text-white">Kestric Shields</span>
             </div>
             <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
               ACTIVE

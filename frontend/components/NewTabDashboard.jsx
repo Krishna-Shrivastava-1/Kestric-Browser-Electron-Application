@@ -91,7 +91,7 @@ export default function NewTabDashboard({ wallpaper, onNavigate, onSearch }) {
       <div className="relative z-10 flex w-full justify-end p-6">
         <div className="flex items-center gap-2 text-xs text-white/70 backdrop-blur-md bg-black/30 px-3.5 py-1.5 rounded-full border border-white/10 shadow-lg">
           <Compass size={13} className="text-blue-400" />
-          <span>Zenith Private Mode</span>
+          <span>Kestric Private Mode</span>
         </div>
       </div>
 

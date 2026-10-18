@@ -1,13 +1,15 @@
 {
-  "name": "mybrowser",
+  "name": "Kestric",
   "version": "1.0.0",
   "description": "",
   "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {
     "next:dev": "cd frontend && npm run dev",
+    "next:build": "cd frontend && npm run build",
     "electron:dev": "wait-on tcp:3000 && electron .",
-    "dev": "concurrently \"npm run next:dev\" \"npm run electron:dev\""
+    "dev": "concurrently \"npm run next:dev\" \"npm run electron:dev\"",
+    "build": "npm run next:build && electron-builder"
   },
   "keywords": [],
   "author": "",
@@ -16,12 +18,42 @@
     "@ghostery/adblocker-electron": "^2.20.1",
     "axios": "^1.7.9",
     "cheerio": "^1.0.0",
-    "cross-fetch": "^4.1.0"
+    "cross-fetch": "^4.1.0",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.browser.app",
+    "productName": "MyBrowser",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Krishna-Shrivastava-1",
+        "repo": "Kestric-Browser-Electron-Application"
+      }
+    ],
+    "files": [
+      "electron/**/*",
+      "frontend/out/**/*"
+    ],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }

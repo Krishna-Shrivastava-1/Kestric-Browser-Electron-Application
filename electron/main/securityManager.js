@@ -131,8 +131,8 @@ class SecurityManager {
             try {
               const isAudio = '${permission}' === 'microphone' || '${permission}' === 'media';
               const isVideo = '${permission}' === 'camera' || '${permission}' === 'media';
-              if (window.__zenith_active_streams) {
-                window.__zenith_active_streams.forEach(stream => {
+              if (window.__kestric_active_streams) {
+                window.__kestric_active_streams.forEach(stream => {
                   stream.getTracks().forEach(track => {
                     if ((track.kind === 'audio' && isAudio) || (track.kind === 'video' && isVideo)) {
                       track.stop();
@@ -235,7 +235,7 @@ class SecurityManager {
   handleActionUrl(rawUrl) {
     try {
       const url = new URL(rawUrl);
-      if (url.protocol !== 'zenith-action:') return;
+      if (url.protocol !== 'kestric-action:') return;
 
       const action = url.hostname || url.pathname.replace(/^\/\//, '');
 
@@ -384,7 +384,7 @@ class SecurityManager {
         </div>
         <script>
           function sendAction(allowed) {
-            window.location.href = 'zenith-action://respond?requestId=' + encodeURIComponent('${requestId}') + '&allowed=' + allowed;
+            window.location.href = 'kestric-action://respond?requestId=' + encodeURIComponent('${requestId}') + '&allowed=' + allowed;
           }
         </script>
       </body>
@@ -466,10 +466,10 @@ class SecurityManager {
         </div>
         <script>
           function updatePerm(permission, val) {
-            window.location.href = 'zenith-action://update-perm?origin=' + encodeURIComponent('${origin}') + '&permission=' + encodeURIComponent(permission) + '&value=' + encodeURIComponent(val);
+            window.location.href = 'kestric-action://update-perm?origin=' + encodeURIComponent('${origin}') + '&permission=' + encodeURIComponent(permission) + '&value=' + encodeURIComponent(val);
           }
           function resetAll() {
-            window.location.href = 'zenith-action://reset?origin=' + encodeURIComponent('${origin}');
+            window.location.href = 'kestric-action://reset?origin=' + encodeURIComponent('${origin}');
           }
         </script>
       </body>

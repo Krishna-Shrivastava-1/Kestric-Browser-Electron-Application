@@ -8,7 +8,7 @@ import AdShieldButton from './AdShieldButton';
 import { Search, History, Globe, ArrowUpLeft, X } from 'lucide-react';
 import DownloadsPopover from './DownloadsPopover';
 
-const SEARCH_HISTORY_KEY = 'zenith_omnibox_history';
+const SEARCH_HISTORY_KEY = 'kestric_omnibox_history';
 const MAX_TOTAL_SUGGESTIONS = 8;
 
 export default function NavigationBar({
@@ -120,7 +120,7 @@ export default function NavigationBar({
   }, [urlInput, isOpen]);
 
   const saveToHistory = (text) => {
-    if (!text || text.startsWith('zenith://')) return;
+    if (!text || text.startsWith('kestric://')) return;
     try {
       let history = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]');
       history = history.filter((h) => h.text.toLowerCase() !== text.toLowerCase());

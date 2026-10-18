@@ -455,13 +455,13 @@ try {
 } catch (e) {}
 // Add at the very beginning of tabPreload.js
 try {
-  window.__zenith_active_streams = [];
+  window.__kestric_active_streams = [];
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     const origGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     navigator.mediaDevices.getUserMedia = async function(...args) {
       const stream = await origGUM(...args);
-      if (window.__zenith_active_streams) {
-        window.__zenith_active_streams.push(stream);
+      if (window.__kestric_active_streams) {
+        window.__kestric_active_streams.push(stream);
       }
       return stream;
     };
@@ -470,8 +470,8 @@ try {
 // 2. ULTRA-LIGHTWEIGHT YOUTUBE AD ENGINE (Zero Scroll Overhead)
 const youtubeAdEngine = `
 (function() {
-  if (window.__zenith_yt_engine) return;
-  window.__zenith_yt_engine = true;
+  if (window.__kestric_yt_engine) return;
+  window.__kestric_yt_engine = true;
 
   let wasAdActive = false;
   let userMutedState = false;
@@ -572,7 +572,7 @@ window.addEventListener('DOMContentLoaded', injectYouTubeEngine);
     removeUI();
 
     hostEl = document.createElement('div');
-    hostEl.id = 'zenith-fullscreen-overlay-host';
+    hostEl.id = 'kestric-fullscreen-overlay-host';
     hostEl.style.cssText = `
       position: fixed !important;
       top: 0 !important;

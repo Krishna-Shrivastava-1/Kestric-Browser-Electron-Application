@@ -21,7 +21,7 @@ export default function SecurityBadge({ activeTab, urlInput }) {
   };
 
   const currentUrl = (activeTab?.url || urlInput || '').trim().toLowerCase();
-  const isSearch = activeTab?.showSearch || urlInput?.startsWith('zenith://search');
+  const isSearch = activeTab?.showSearch || urlInput?.startsWith('kestric://search');
   const isHttps = currentUrl.startsWith('https://');
   const isHttp = currentUrl.startsWith('http://');
 
@@ -29,7 +29,7 @@ export default function SecurityBadge({ activeTab, urlInput }) {
     return (
       <div
         className="flex items-center pl-2.5 text-zinc-400 select-none"
-        title="Zenith Search"
+        title="Kestric Search"
         onMouseDown={handleMouseDown}
         onClick={handleClick}
       >
