@@ -208,56 +208,51 @@ app.whenReady().then(() => {
   }
 
   // --- STABLE SILENT BACKGROUND AUTO-UPDATER ---
+ // --- BULLETPROOF BACKGROUND AUTO-UPDATER ---
   if (app.isPackaged) {
-    autoUpdater.autoDownload = true;
+    // 1. Turn OFF automatic download to stop the cache loop
+    autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
 
-    // Logging helpers
-    autoUpdater.on('checking-for-update', () => {
-      console.log('🔍 Checking updates. Current version:', app.getVersion());
-    });
-
+    // 2. Only download if the remote version is strictly newer
     autoUpdater.on('update-available', (info) => {
-      console.log(`📦 Update available: ${info.version} (Current: ${app.getVersion()})`);
-    });
+      const currentVersion = app.getVersion();
+      console.log(`Current: ${currentVersion} | Remote: ${info.version}`);
 
-    autoUpdater.on('update-not-available', () => {
-      console.log('✅ Browser is on the latest version.');
-    });
-
-    autoUpdater.on('error', (err) => {
-      console.warn('⚠️ Auto-updater notice:', err ? err.message : err);
-    });
-
-    // Guard against repeated restart loops
-    let isUpdating = false;
-
-    autoUpdater.on('update-downloaded', (info) => {
-      // 1. IF VERSION MATCHES CURRENT APP, DO NOT REINSTALL
-      if (info && info.version === app.getVersion()) {
-        console.log('ℹ️ Already running version', info.version, '- ignoring reinstall.');
+      // Strict check: if remote version is NOT newer, abort!
+      if (info.version === currentVersion) {
+        console.log('App is already on this version. Aborting download.');
         return;
       }
 
-      // 2. Prevent multi-triggering
-      if (!isUpdating) {
-        isUpdating = true;
-        console.log(`🚀 Update ${info.version} downloaded. Applying silently in 3 seconds...`);
-        
-        setTimeout(() => {
-          // (isSilent = true, isForceRunAfter = true)
-          autoUpdater.quitAndInstall(true, true);
-        }, 3000);
-      }
+      console.log(`Downloading update v${info.version}...`);
+      autoUpdater.downloadUpdate().catch((err) => {
+        console.error('Download error:', err);
+      });
     });
 
-    // Wait 6 seconds after opening the browser before checking
-    // (Prevents startup UI freezes or loop restarts)
+    autoUpdater.on('update-not-available', () => {
+      console.log('App is up to date.');
+    });
+
+    autoUpdater.on('error', (err) => {
+      console.warn('Auto-updater error:', err ? err.message : err);
+    });
+
+    // 3. When downloaded, wait for the user to close the app naturally!
+    // NEVER call quitAndInstall() forcefully while the user is using the app.
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log(`Update v${info.version} downloaded successfully.`);
+      // Let autoInstallOnAppQuit handle it safely only when user closes the app
+      autoUpdater.autoInstallOnAppQuit = true;
+    });
+
+    // Check 10 seconds after opening
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch(() => {});
-    }, 6000);
+    }, 10000);
 
-    // Check periodically every 30 minutes in background
+    // Check every 30 minutes
     setInterval(() => {
       autoUpdater.checkForUpdates().catch(() => {});
     }, 30 * 60 * 1000);
