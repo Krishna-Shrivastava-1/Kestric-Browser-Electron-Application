@@ -90,7 +90,6 @@
 
 
 
-
 // main.js
 const { app, BrowserWindow, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
@@ -136,7 +135,12 @@ function registerIpcHandlers() {
 app.whenReady().then(() => {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = { ...details.responseHeaders };
-    responseHeaders['X-Content-Type-Options'] = ['nosniff'];
+    
+    // Only apply nosniff if content-type is present
+    if (responseHeaders['Content-Type'] || responseHeaders['content-type']) {
+      responseHeaders['X-Content-Type-Options'] = ['nosniff'];
+    }
+    
     callback({ responseHeaders });
   });
 
@@ -153,8 +157,12 @@ app.whenReady().then(() => {
   // CREATE WINDOW AND PASS IT TO DOWNLOAD MANAGER:
   const win = createMainWindow();
   const mainWindow = win || (typeof getMainWindow === 'function' ? getMainWindow() : BrowserWindow.getAllWindows()[0]);
+  
   if (mainWindow) {
     downloadManager.setMainWindow(mainWindow);
+
+    // Open DevTools in packaged build temporarily if you need to debug CSS/network errors:
+    // mainWindow.webContents.openDevTools();
   }
 
   // --- BACKGROUND SILENT AUTO-UPDATER ---
@@ -171,9 +179,10 @@ app.whenReady().then(() => {
     }, 15 * 60 * 1000);
   }
 
-  // As soon as the update file is downloaded in the background, restart silently into the new version
+  // Restart into update only on user quit, or prompt before install
   autoUpdater.on('update-downloaded', () => {
-    autoUpdater.quitAndInstall(true, true);
+    // Note: quitAndInstall(false, true) will restart smoothly
+    autoUpdater.quitAndInstall(false, true);
   });
 });
 

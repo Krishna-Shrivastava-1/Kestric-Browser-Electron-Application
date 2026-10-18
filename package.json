@@ -1,7 +1,7 @@
 {
-  "name": "Kestric",
-  "version": "1.0.0",
-  "description": "",
+  "name": "kestric",
+  "version": "1.0.1",
+  "description": "Kestric Web Browser",
   "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {
@@ -28,7 +28,7 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.browser.app",
+    "appId": "com.kestric.browser",
     "productName": "Kestric",
     "publish": [
       {
@@ -42,9 +42,12 @@
       "frontend/out/**/*"
     ],
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": false
     },
     "win": {
       "target": "nsis"
