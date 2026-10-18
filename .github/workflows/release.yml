@@ -33,6 +33,9 @@ jobs:
           npm ci
 
       - name: Build Next.js Frontend
+        env:
+          # Injects your secret into the Next.js static build
+          NEXT_PUBLIC_PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: npm run next:build
 
       - name: Build and Publish Electron App
