@@ -1,6 +1,6 @@
 {
   "name": "kestric",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Kestric Web Browser",
   "main": "electron/main.js",
   "type": "commonjs",
@@ -42,12 +42,11 @@
       "frontend/out/**/*"
     ],
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "runAfterFinish": false
+      "createStartMenuShortcut": true
     },
     "win": {
       "target": "nsis"

@@ -89,7 +89,6 @@
 
 
 
-
 // main.js
 const { app, BrowserWindow, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
@@ -160,29 +159,26 @@ app.whenReady().then(() => {
   
   if (mainWindow) {
     downloadManager.setMainWindow(mainWindow);
-
-    // Open DevTools in packaged build temporarily if you need to debug CSS/network errors:
-    // mainWindow.webContents.openDevTools();
   }
 
-  // --- BACKGROUND SILENT AUTO-UPDATER ---
+  // --- BACKGROUND SILENT AUTO-UPDATER (CHROME STYLE) ---
   if (app.isPackaged) {
     autoUpdater.autoDownload = true;
+    // Installs silently in background when the user closes the app:
     autoUpdater.autoInstallOnAppQuit = true;
 
     // Check immediately on startup
     autoUpdater.checkForUpdates();
 
-    // Check periodically every 15 minutes silently in the background
+    // Check periodically every 15 minutes silently
     setInterval(() => {
       autoUpdater.checkForUpdates();
     }, 15 * 60 * 1000);
   }
 
-  // Restart into update only on user quit, or prompt before install
+  // Log when update is ready — will NOT force close the app
   autoUpdater.on('update-downloaded', () => {
-    // Note: quitAndInstall(false, true) will restart smoothly
-    autoUpdater.quitAndInstall(false, true);
+    console.log('Update ready. Will install automatically on quit.');
   });
 });
 

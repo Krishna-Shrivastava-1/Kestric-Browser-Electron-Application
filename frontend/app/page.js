@@ -8,7 +8,7 @@ import SearchResults from '@/components/SearchResults';
 import NewTabDashboard from '@/components/NewTabDashboard';
 import { getNextWallpaper } from '@/utils/wallpaperManager';
 
-const BROWSER_PROTOCOL = 'zenith';
+const BROWSER_PROTOCOL = 'kestric';
 
 export default function BrowserChrome() {
   const [tabs, setTabs] = useState([]);
