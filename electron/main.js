@@ -87,19 +87,19 @@
 
 
 
-
 // main.js
 const { app, BrowserWindow, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-// 1. STABLE CHROMIUM FLAGS
+// 1. HIGH-PERFORMANCE, STABLE CHROMIUM FLAGS
 app.enableSandbox();
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 
-// Keep PiP/Meet video running smoothly in background (SAFE FLAGS)
-app.commandLine.appendSwitch('disable-background-timer-throttling');
-app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
-app.commandLine.appendSwitch('disable-renderer-backgrounding');
+// Prevent GPU crashes from killing window rendering
+app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
+
+// Enable smooth hardware acceleration without compositor lockups
+app.commandLine.appendSwitch('enable-accelerated-video-decode');
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'default_public_interface_only');
 
 // Linux PipeWire screen capture only
@@ -107,16 +107,15 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
 }
 
-// 2. DIAGNOSTICS & GPU CRASH RECOVERY
+// 2. DIAGNOSTICS & ERROR HANDLING
 app.on('child-process-gone', (_e, d) =>
   console.error('[child-process-gone]', d.type, d.reason, d.exitCode));
 
 app.on('render-process-gone', (_e, _wc, d) =>
   console.error('[render-process-gone]', d.reason));
 
-// Detect if GPU crashes (this catches the invisible glitch)
 app.on('gpu-process-gone', (_e, d) => {
-  console.error('[gpu-process-gone] Graphics driver crashed:', d.details);
+  console.error('[gpu-process-gone] Recovering from graphics issue:', d.details);
 });
 
 const { createMainWindow, getMainWindow } = require('./main/windowManager');
@@ -167,10 +166,11 @@ app.whenReady().then(() => {
     downloadManager.setMainWindow(mainWindow);
   }
 
-  // --- BACKGROUND SILENT AUTO-UPDATER (CHROME STYLE) ---
+  // --- SILENT BACKGROUND AUTO-UPDATER ---
   if (app.isPackaged) {
     autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    // Don't leave half-installed state when app closes:
+    autoUpdater.autoInstallOnAppQuit = false;
 
     // Check immediately on startup
     autoUpdater.checkForUpdates();
@@ -181,8 +181,11 @@ app.whenReady().then(() => {
     }, 15 * 60 * 1000);
   }
 
+  // When update is ready: silently install and immediately restart smoothly
   autoUpdater.on('update-downloaded', () => {
-    console.log('Update ready. Will install automatically on quit.');
+    console.log('Update ready. Silently restarting into new version...');
+    // (isSilent = true, isForceRunAfter = true)
+    autoUpdater.quitAndInstall(true, true);
   });
 });
 

@@ -1,35 +1,49 @@
 // src/utils/wallpaperManager.js
+// src/utils/wallpaperManager.js
 
 const PIXABAY_API_KEY =
   process.env.NEXT_PUBLIC_PIXABAY_API_KEY ||
-  process.env.PIXABAY_API_KEY
+  process.env.PIXABAY_API_KEY;
 
-// Changed version key to "v3" to force-clear broken URLs stored in localStorage
-const CACHE_KEY = 'zenith_wallpaper_cache_v3';
-const USED_KEY = 'zenith_wallpaper_used_ids_v3';
+// v4 force-clears old cached low-res images
+const CACHE_KEY = 'zenith_wallpaper_cache_v4';
+const USED_KEY = 'zenith_wallpaper_used_ids_v4';
 const MIN_CACHE_THRESHOLD = 5;
 
+// High-quality, aesthetic landscape queries
 const SEARCH_TOPICS = [
-  'space nebula galaxy',
-  'cyberpunk futuristic city',
-  'aurora borealis night sky',
-  'deep space cosmos stars',
-  'surreal fantasy mountain',
+  'dolomites alps landscape mountain lake',
+  'scenic japanese garden autumn sakura 4k',
+  'misty pine forest foggy mountain morning',
+  'tropical turquoise ocean sunset aerial coastline',
+  'norwegian fjord aurora borealis reflection',
+  'dramatic golden hour desert sand dunes',
+  'lush rainforest waterfall paradise landscape',
+  'cinematic starry night sky milky way mountains',
+  'iceland glacier volcanic black sand beach',
+  'swiss alps wildflower valley cottage scenic',
+  'breathtaking canyon river overlook sunset'
 ];
 
 const FALLBACK_WALLPAPERS = [
   {
     id: 'fb-1',
-    url: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=1920&q=80',
-    photographer: 'Lucas Pezeta',
-    title: 'Cosmic Horizons',
+    url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=2560&q=80',
+    photographer: 'Bailey Zindel',
+    title: 'Yosemite Mist Valley',
   },
   {
     id: 'fb-2',
-    url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1920&q=80',
-    photographer: 'Sandro Katalina',
-    title: 'Neon Odyssey',
+    url: 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2560&q=80',
+    photographer: 'Luca Bravo',
+    title: 'Bled Alpine Lake',
   },
+  {
+    id: 'fb-3',
+    url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=2560&q=80',
+    photographer: 'Kalpesh Patel',
+    title: 'Majestic Peaks',
+  }
 ];
 
 export async function getNextWallpaper() {
@@ -39,7 +53,6 @@ export async function getNextWallpaper() {
     let cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]');
     let usedIds = JSON.parse(localStorage.getItem(USED_KEY) || '[]');
 
-    // If cache is empty on startup, await fetch
     if (cache.length === 0) {
       await refillCache();
       cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]');
@@ -71,12 +84,11 @@ async function refillCache() {
   if (!PIXABAY_API_KEY) return;
 
   const topic = SEARCH_TOPICS[Math.floor(Math.random() * SEARCH_TOPICS.length)];
-  const page = Math.floor(Math.random() * 3) + 1;
+  const page = Math.floor(Math.random() * 4) + 1;
 
-  // webformatURL is standard and allowed by Pixabay's free tier
   const url = `https://pixabay.com/api/?key=${PIXABAY_API_KEY}&q=${encodeURIComponent(
     topic
-  )}&image_type=photo&orientation=horizontal&safesearch=true&per_page=30&page=${page}`;
+  )}&image_type=photo&orientation=horizontal&safesearch=true&min_width=1920&min_height=1080&per_page=30&page=${page}`;
 
   try {
     const res = await fetch(url);
@@ -86,10 +98,10 @@ async function refillCache() {
     if (data?.hits && Array.isArray(data.hits) && data.hits.length > 0) {
       const formatted = data.hits.map((hit) => ({
         id: `pixabay-${hit.id}`,
-        // Pixabay's `webformatURL` is the only URL guaranteed not to return 403 Forbidden
-        url: hit.webformatURL,
-        photographer: hit.user || 'Creator',
-        title: hit.tags || 'Wallpaper',
+        // Use largeImageURL when available for crisp 1080p/4k displays
+        url: hit.largeImageURL || hit.webformatURL,
+        photographer: hit.user || 'Photographer',
+        title: hit.tags || 'Landscape',
       }));
 
       const existing = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]');
