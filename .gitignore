@@ -1,0 +1,22 @@
+# Ignore Node dependencies (root, frontend, and electron)
+node_modules/
+*/node_modules/
+
+# Ignore Next.js build output
+.next/
+*/.next/
+out/
+*/out/
+
+# Ignore environment variables / secrets
+.env
+.env.local
+.env*.local
+
+# Ignore build artifacts / packaged files
+dist/
+build/
+
+# Ignore system files
+.DS_Store
+Thumbs.db

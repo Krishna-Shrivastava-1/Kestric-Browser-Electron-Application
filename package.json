@@ -1,0 +1,27 @@
+{
+  "name": "mybrowser",
+  "version": "1.0.0",
+  "description": "",
+  "main": "electron/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "next:dev": "cd frontend && npm run dev",
+    "electron:dev": "wait-on tcp:3000 && electron .",
+    "dev": "concurrently \"npm run next:dev\" \"npm run electron:dev\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.20.1",
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
+    "cross-fetch": "^4.1.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^8.0.1"
+  }
+}
