@@ -79,4 +79,10 @@ contextBridge.exposeInMainWorld('browserAPI', {
     ipcRenderer.on('window:isMaximized', handler);
     return () => ipcRenderer.removeListener('window:isMaximized', handler);
   },
+
+  onAppUpdatedToast: (callback) => {
+  const handler = (_event, data) => callback(data);
+  ipcRenderer.on('app-updated-toast', handler);
+  return () => ipcRenderer.removeListener('app-updated-toast', handler);
+},
 });
