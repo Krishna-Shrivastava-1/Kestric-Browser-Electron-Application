@@ -85,4 +85,5 @@ contextBridge.exposeInMainWorld('browserAPI', {
   ipcRenderer.on('app-updated-toast', handler);
   return () => ipcRenderer.removeListener('app-updated-toast', handler);
 },
+checkWasUpdated: () => ipcRenderer.invoke('check-was-updated'),
 });

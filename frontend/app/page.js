@@ -1,3 +1,4 @@
+
 // // src/app/page.js
 // 'use client';
 
@@ -15,6 +16,7 @@
 //   const [activeTabId, setActiveTabId] = useState(null);
 //   const [urlInput, setUrlInput] = useState('');
 //   const [isSearching, setIsSearching] = useState(false);
+//   const [showUpdateToast, setShowUpdateToast] = useState(false);
 
 //   const activeTabIdRef = useRef(activeTabId);
 //   const tabsRef = useRef([]);
@@ -30,6 +32,25 @@
 //   }, [tabs]);
 
 //   const activeTab = tabs.find((t) => t.id === activeTabId);
+
+//   // Chrome-style update notification listener
+//   useEffect(() => {
+//     if (!window.browserAPI?.onAppUpdatedToast) return;
+
+//     let dismissTimer = null;
+//     const cleanup = window.browserAPI.onAppUpdatedToast(() => {
+//       setShowUpdateToast(true);
+//       if (dismissTimer) clearTimeout(dismissTimer);
+//       dismissTimer = setTimeout(() => {
+//         setShowUpdateToast(false);
+//       }, 5000); // Automatically fades out after 5 seconds
+//     });
+
+//     return () => {
+//       cleanup?.();
+//       if (dismissTimer) clearTimeout(dismissTimer);
+//     };
+//   }, []);
 
 //   useEffect(() => {
 //     if (!activeTab) return;
@@ -330,7 +351,25 @@
 //   };
 
 //   return (
-//     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#121217] font-sans">
+//     <div className="relative flex flex-col h-screen w-screen overflow-hidden bg-[#121217] font-sans select-none">
+//       {/* CHROME-STYLE TOP-CENTER UPDATE TOAST */}
+//       {showUpdateToast && (
+//         <div className="absolute top-[90px] left-1/2 -translate-x-1/2 z-[10000] flex items-center gap-2.5 px-4 py-2 bg-[#1e1e24]/95 border border-white/10 text-white text-[13px] font-medium rounded-full shadow-2xl backdrop-blur-md transition-all duration-300">
+//           <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+//             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+//           </svg>
+//           <span className="tracking-wide">Kestric is updated</span>
+//           <button 
+//             type="button"
+//             onClick={() => setShowUpdateToast(false)} 
+//             className="ml-2 text-zinc-400 hover:text-white transition-colors cursor-pointer focus:outline-none"
+//             aria-label="Close"
+//           >
+//             ✕
+//           </button>
+//         </div>
+//       )}
+
 //       <TabBar
 //         tabs={tabs}
 //         activeTabId={activeTabId}
@@ -398,6 +437,12 @@
 
 
 
+
+
+
+
+
+
 // src/app/page.js
 'use client';
 
@@ -432,22 +477,37 @@ export default function BrowserChrome() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
-  // Chrome-style update notification listener
+  // --- CHROME-STYLE UPDATE TOAST CHECK ---
   useEffect(() => {
-    if (!window.browserAPI?.onAppUpdatedToast) return;
+    let timer = null;
 
-    let dismissTimer = null;
-    const cleanup = window.browserAPI.onAppUpdatedToast(() => {
+    async function checkUpdateStatus() {
+      try {
+        // Actively check if the app was updated before this launch
+        const res = await window.browserAPI?.checkWasUpdated?.();
+        if (res?.wasUpdated) {
+          setShowUpdateToast(true);
+          timer = setTimeout(() => {
+            setShowUpdateToast(false);
+          }, 5000);
+        }
+      } catch (err) {
+        console.error('Error checking update status:', err);
+      }
+    }
+
+    checkUpdateStatus();
+
+    // Fallback listener for dynamic pushes
+    const cleanup = window.browserAPI?.onAppUpdatedToast?.(() => {
       setShowUpdateToast(true);
-      if (dismissTimer) clearTimeout(dismissTimer);
-      dismissTimer = setTimeout(() => {
-        setShowUpdateToast(false);
-      }, 5000); // Automatically fades out after 5 seconds
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setShowUpdateToast(false), 5000);
     });
 
     return () => {
       cleanup?.();
-      if (dismissTimer) clearTimeout(dismissTimer);
+      if (timer) clearTimeout(timer);
     };
   }, []);
 
@@ -751,17 +811,17 @@ export default function BrowserChrome() {
 
   return (
     <div className="relative flex flex-col h-screen w-screen overflow-hidden bg-[#121217] font-sans select-none">
-      {/* CHROME-STYLE TOP-CENTER UPDATE TOAST */}
+      {/* GOOGLE CHROME STYLE UPDATE TOAST */}
       {showUpdateToast && (
-        <div className="absolute top-[90px] left-1/2 -translate-x-1/2 z-[10000] flex items-center gap-2.5 px-4 py-2 bg-[#1e1e24]/95 border border-white/10 text-white text-[13px] font-medium rounded-full shadow-2xl backdrop-blur-md transition-all duration-300">
-          <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+        <div className="absolute top-[88px] left-1/2 -translate-x-1/2 z-[10000] flex items-center gap-3 px-4 py-2 bg-[#202124] border border-[#3c4043] text-[#e8eaed] text-[13px] font-medium rounded-full shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-3 duration-300">
+          <svg className="w-4 h-4 text-[#81c995] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
           <span className="tracking-wide">Kestric is updated</span>
           <button 
             type="button"
             onClick={() => setShowUpdateToast(false)} 
-            className="ml-2 text-zinc-400 hover:text-white transition-colors cursor-pointer focus:outline-none"
+            className="ml-1 text-[#9aa0a6] hover:text-white transition-colors cursor-pointer text-sm leading-none"
             aria-label="Close"
           >
             ✕

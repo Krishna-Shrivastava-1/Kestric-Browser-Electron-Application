@@ -45,11 +45,12 @@
 //   registerSecurityIpc();
 // }
 
-// // Semver safe comparison helper (strips any 'v' prefixes)
+// // Semver safe comparison helper
 // function isNewerVersion(remote, local) {
-//   const clean = (v) => (v || '').replace(/^v/, '').trim();
-//   const rParts = clean(remote).split('.').map(Number);
-//   const lParts = clean(local).split('.').map(Number);
+//   if (!remote || !local) return false;
+//   const clean = (v) => v.replace(/^v/, '').trim();
+//   const rParts = clean(remote).split('.').map((n) => parseInt(n, 10) || 0);
+//   const lParts = clean(local).split('.').map((n) => parseInt(n, 10) || 0);
 //   for (let i = 0; i < 3; i++) {
 //     const r = rParts[i] || 0;
 //     const l = lParts[i] || 0;
@@ -59,35 +60,80 @@
 //   return false;
 // }
 
-// // Tracks whether the app was newly updated on this startup
-// function checkAndRecordAppUpdate() {
+// // Tracks whether the app was just updated to show the Chrome-like toast
+// let appWasJustUpdated = false;
+
+// function checkAppUpdateStatus() {
 //   const versionFile = path.join(app.getPath('userData'), 'app-version.json');
 //   const currentVersion = app.getVersion();
-//   let wasUpdated = false;
 
 //   try {
 //     if (fs.existsSync(versionFile)) {
 //       const data = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
 //       if (data.version && isNewerVersion(currentVersion, data.version)) {
-//         wasUpdated = true;
+//         appWasJustUpdated = true;
 //       }
 //     }
 //     fs.writeFileSync(versionFile, JSON.stringify({ version: currentVersion }), 'utf8');
 //   } catch (err) {
-//     console.error('Failed to read/write app-version.json:', err);
+//     console.error('[VersionCheck] Error:', err);
 //   }
-
-//   return wasUpdated;
 // }
 
+// function getCleanUserAgent() {
+//   const chromeVersion = process.versions.chrome;
+//   if (process.platform === 'win32') {
+//     return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+//   } else if (process.platform === 'darwin') {
+//     return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+//   }
+//   return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+// }
+
+// // Flags to prevent recursive install loops
+// let isUpdateDownloaded = false;
+// let isInstallingUpdate = false;
+
 // app.whenReady().then(() => {
-//   const wasAppJustUpdated = checkAndRecordAppUpdate();
+//   checkAppUpdateStatus();
+
+//   // IPC Handler: Next.js will ask if the browser was updated when it finishes mounting
+//   ipcMain.handle('check-was-updated', () => {
+//     const result = appWasJustUpdated;
+//     appWasJustUpdated = false; // Only show once
+//     return { wasUpdated: result, version: app.getVersion() };
+//   });
+
+//   const cleanUA = getCleanUserAgent();
+//   const chromeMajor = process.versions.chrome.split('.')[0];
+//   const platformName = process.platform === 'win32' ? '"Windows"' : process.platform === 'darwin' ? '"macOS"' : '"Linux"';
+
+//   session.defaultSession.setUserAgent(cleanUA);
+
+//   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+//     const requestHeaders = { ...details.requestHeaders };
+//     requestHeaders['User-Agent'] = cleanUA;
+//     requestHeaders['sec-ch-ua'] = `"Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}", "Not-A.Brand";v="99"`;
+//     requestHeaders['sec-ch-ua-mobile'] = '?0';
+//     requestHeaders['sec-ch-ua-platform'] = platformName;
+//     callback({ requestHeaders });
+//   });
 
 //   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
 //     const responseHeaders = { ...details.responseHeaders };
-//     if (responseHeaders['Content-Type'] || responseHeaders['content-type']) {
+//     const url = details.url.toLowerCase();
+
+//     const isCloudflare =
+//       url.includes('challenges.cloudflare.com') ||
+//       url.includes('/cdn-cgi/challenge-platform/') ||
+//       url.includes('turnstile') ||
+//       url.includes('recaptcha') ||
+//       url.includes('hcaptcha');
+
+//     if (!isCloudflare && (responseHeaders['Content-Type'] || responseHeaders['content-type'])) {
 //       responseHeaders['X-Content-Type-Options'] = ['nosniff'];
 //     }
+
 //     callback({ responseHeaders });
 //   });
 
@@ -103,41 +149,31 @@
   
 //   if (mainWindow) {
 //     downloadManager.setMainWindow(mainWindow);
-
-//     // If application was updated silently on last restart, inform renderer to show toast
-//     if (wasAppJustUpdated) {
-//       mainWindow.webContents.once('did-finish-load', () => {
-//         mainWindow.webContents.send('app-updated-toast', { version: app.getVersion() });
-//       });
-//     }
 //   }
 
-//   // --- SILENT CHROME-STYLE BACKGROUND AUTO-UPDATER ---
+//   // --- 100% SILENT CHROME-STYLE BACKGROUND AUTO-UPDATER ---
 //   if (app.isPackaged) {
-//     let updateDownloaded = false;
-
 //     autoUpdater.autoDownload = false;
-//     // Turn this OFF to prevent NSIS from popping up its interactive installer on exit!
 //     autoUpdater.autoInstallOnAppQuit = false;
 
 //     autoUpdater.on('update-available', (info) => {
 //       const currentVersion = app.getVersion();
 //       console.log(`[AutoUpdater] Current: ${currentVersion} | Available: ${info.version}`);
 
-//       // Strict semver check to eliminate loop downloads
+//       // STRICT CHECK: Never download if remote is not strictly higher
 //       if (!isNewerVersion(info.version, currentVersion)) {
 //         console.log('[AutoUpdater] Remote version is not newer. Ignoring.');
 //         return;
 //       }
 
-//       console.log(`[AutoUpdater] Downloading v${info.version} silently in background...`);
+//       console.log(`[AutoUpdater] Downloading update v${info.version} silently in background...`);
 //       autoUpdater.downloadUpdate().catch((err) => {
-//         console.error('[AutoUpdater] Download failed:', err);
+//         console.error('[AutoUpdater] Download error:', err);
 //       });
 //     });
 
 //     autoUpdater.on('update-not-available', () => {
-//       console.log('[AutoUpdater] Kestric is up to date.');
+//       console.log('[AutoUpdater] App is up to date.');
 //     });
 
 //     autoUpdater.on('error', (err) => {
@@ -145,29 +181,29 @@
 //     });
 
 //     autoUpdater.on('update-downloaded', (info) => {
-//       console.log(`[AutoUpdater] v${info.version} ready. Will apply silently on app close.`);
-//       updateDownloaded = true;
+//       console.log(`[AutoUpdater] Update v${info.version} downloaded silently.`);
+//       isUpdateDownloaded = true;
 //     });
 
-//     // When the user actually closes Kestric, silently apply the update with zero UI
-//     app.on('before-quit', (e) => {
-//       if (updateDownloaded) {
-//         // quitAndInstall(isSilent = true, isForceRunAfter = false)
-//         // isSilent: true suppresses all NSIS wizard dialogs / "please wait" windows
-//         // isForceRunAfter: false ensures it doesn't spontaneously launch back up if the user intentionally closed it
-//         autoUpdater.quitAndInstall(true, false);
-//       }
-//     });
-
-//     // Initial check after 10s
+//     // Check 15 seconds after opening
 //     setTimeout(() => {
 //       autoUpdater.checkForUpdates().catch(() => {});
-//     }, 10000);
+//     }, 15000);
 
 //     // Recheck every 30 minutes
 //     setInterval(() => {
 //       autoUpdater.checkForUpdates().catch(() => {});
 //     }, 30 * 60 * 1000);
+//   }
+// });
+
+// // SILENT INSTALL ON QUIT (Prevent recursive loop)
+// app.on('before-quit', (e) => {
+//   if (isUpdateDownloaded && !isInstallingUpdate) {
+//     isInstallingUpdate = true;
+//     console.log('[AutoUpdater] Applying update silently before exit...');
+//     // isSilent: true, isForceRunAfter: false (Quiet background install like Chrome)
+//     autoUpdater.quitAndInstall(true, false);
 //   }
 // });
 
@@ -192,11 +228,6 @@
 
 
 
-
-
-
-
-
 // main.js
 const { app, BrowserWindow, session, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
@@ -205,7 +236,6 @@ const fs = require('fs');
 
 // 1. HIGH-PERFORMANCE, STABLE CHROMIUM FLAGS
 app.enableSandbox();
-// Prevent blink from setting automation flags
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
 app.commandLine.appendSwitch('enable-accelerated-video-decode');
@@ -244,11 +274,12 @@ function registerIpcHandlers() {
   registerSecurityIpc();
 }
 
-// Semver safe comparison helper (strips any 'v' prefixes)
+// Semver safe comparison helper
 function isNewerVersion(remote, local) {
-  const clean = (v) => (v || '').replace(/^v/, '').trim();
-  const rParts = clean(remote).split('.').map(Number);
-  const lParts = clean(local).split('.').map(Number);
+  if (!remote || !local) return false;
+  const clean = (v) => v.replace(/^v/, '').trim();
+  const rParts = clean(remote).split('.').map((n) => parseInt(n, 10) || 0);
+  const lParts = clean(local).split('.').map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < 3; i++) {
     const r = rParts[i] || 0;
     const l = lParts[i] || 0;
@@ -258,28 +289,42 @@ function isNewerVersion(remote, local) {
   return false;
 }
 
-// Tracks whether the app was newly updated on this startup
-function checkAndRecordAppUpdate() {
+// Purges stuck pending installers from AppData that trigger infinite loops
+function purgeStaleUpdaterCache() {
+  try {
+    const localAppData = process.env.LOCALAPPDATA || '';
+    if (localAppData) {
+      const pendingDir = path.join(localAppData, 'kestric-updater', 'pending');
+      if (fs.existsSync(pendingDir)) {
+        console.log('[AutoUpdater] Purging stuck pending updater cache:', pendingDir);
+        fs.rmSync(pendingDir, { recursive: true, force: true });
+      }
+    }
+  } catch (err) {
+    console.warn('[AutoUpdater] Failed to purge pending cache:', err.message);
+  }
+}
+
+// Tracks whether the app was just updated to trigger the Chrome toast
+let appWasJustUpdated = false;
+
+function checkAppUpdateStatus() {
   const versionFile = path.join(app.getPath('userData'), 'app-version.json');
   const currentVersion = app.getVersion();
-  let wasUpdated = false;
 
   try {
     if (fs.existsSync(versionFile)) {
       const data = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
       if (data.version && isNewerVersion(currentVersion, data.version)) {
-        wasUpdated = true;
+        appWasJustUpdated = true;
       }
     }
     fs.writeFileSync(versionFile, JSON.stringify({ version: currentVersion }), 'utf8');
   } catch (err) {
-    console.error('Failed to read/write app-version.json:', err);
+    console.error('[VersionCheck] Error:', err);
   }
-
-  return wasUpdated;
 }
 
-// Generate clean, modern Chrome User-Agent without any "Electron" traces
 function getCleanUserAgent() {
   const chromeVersion = process.versions.chrome;
   if (process.platform === 'win32') {
@@ -290,28 +335,39 @@ function getCleanUserAgent() {
   return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
 }
 
+// Flags to prevent recursive install loops
+let isUpdateDownloaded = false;
+let isQuittingForUpdate = false;
+
 app.whenReady().then(() => {
-  const wasAppJustUpdated = checkAndRecordAppUpdate();
+  // 1. Wipe any leftover/corrupt update files that cause constant reinstalling
+  purgeStaleUpdaterCache();
+
+  // 2. Check if this is the first launch after a successful update
+  checkAppUpdateStatus();
+
+  // 3. Register IPC handler for page.js to query update status
+  ipcMain.handle('check-was-updated', () => {
+    const result = appWasJustUpdated;
+    appWasJustUpdated = false; // Show only once
+    return { wasUpdated: result, version: app.getVersion() };
+  });
+
   const cleanUA = getCleanUserAgent();
   const chromeMajor = process.versions.chrome.split('.')[0];
   const platformName = process.platform === 'win32' ? '"Windows"' : process.platform === 'darwin' ? '"macOS"' : '"Linux"';
 
-  // 1. Set global user agent on default session
   session.defaultSession.setUserAgent(cleanUA);
 
-  // 2. Strip "Electron" traces from Client Hints & Request Headers
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
     const requestHeaders = { ...details.requestHeaders };
-
     requestHeaders['User-Agent'] = cleanUA;
     requestHeaders['sec-ch-ua'] = `"Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}", "Not-A.Brand";v="99"`;
     requestHeaders['sec-ch-ua-mobile'] = '?0';
     requestHeaders['sec-ch-ua-platform'] = platformName;
-
     callback({ requestHeaders });
   });
 
-  // 3. Prevent nosniff from breaking Cloudflare Turnstile / Captcha challenge scripts
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = { ...details.responseHeaders };
     const url = details.url.toLowerCase();
@@ -323,7 +379,6 @@ app.whenReady().then(() => {
       url.includes('recaptcha') ||
       url.includes('hcaptcha');
 
-    // Only apply nosniff to normal requests; exempt anti-bot challenge scripts
     if (!isCloudflare && (responseHeaders['Content-Type'] || responseHeaders['content-type'])) {
       responseHeaders['X-Content-Type-Options'] = ['nosniff'];
     }
@@ -343,18 +398,10 @@ app.whenReady().then(() => {
   
   if (mainWindow) {
     downloadManager.setMainWindow(mainWindow);
-
-    if (wasAppJustUpdated) {
-      mainWindow.webContents.once('did-finish-load', () => {
-        mainWindow.webContents.send('app-updated-toast', { version: app.getVersion() });
-      });
-    }
   }
 
-  // --- SILENT BACKGROUND AUTO-UPDATER ---
+  // --- 100% SILENT CHROME-STYLE BACKGROUND AUTO-UPDATER ---
   if (app.isPackaged) {
-    let updateDownloaded = false;
-
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
 
@@ -362,19 +409,21 @@ app.whenReady().then(() => {
       const currentVersion = app.getVersion();
       console.log(`[AutoUpdater] Current: ${currentVersion} | Available: ${info.version}`);
 
+      // Strict semver check: Never download if the remote version is equal or lower
       if (!isNewerVersion(info.version, currentVersion)) {
         console.log('[AutoUpdater] Remote version is not newer. Ignoring.');
+        purgeStaleUpdaterCache();
         return;
       }
 
-      console.log(`[AutoUpdater] Downloading v${info.version} silently in background...`);
+      console.log(`[AutoUpdater] Downloading update v${info.version} silently in background...`);
       autoUpdater.downloadUpdate().catch((err) => {
-        console.error('[AutoUpdater] Download failed:', err);
+        console.error('[AutoUpdater] Download error:', err);
       });
     });
 
     autoUpdater.on('update-not-available', () => {
-      console.log('[AutoUpdater] Kestric is up to date.');
+      console.log('[AutoUpdater] App is up to date.');
     });
 
     autoUpdater.on('error', (err) => {
@@ -382,24 +431,46 @@ app.whenReady().then(() => {
     });
 
     autoUpdater.on('update-downloaded', (info) => {
-      console.log(`[AutoUpdater] v${info.version} ready. Will apply silently on app close.`);
-      updateDownloaded = true;
+      console.log(`[AutoUpdater] Update v${info.version} downloaded silently.`);
+      isUpdateDownloaded = true;
     });
 
-    app.on('before-quit', (e) => {
-      if (updateDownloaded) {
-        // Silent install without opening installer wizard
-        autoUpdater.quitAndInstall(true, false);
-      }
-    });
-
+    // Check 15 seconds after opening
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch(() => {});
-    }, 10000);
+    }, 15000);
 
+    // Recheck every 30 minutes
     setInterval(() => {
       autoUpdater.checkForUpdates().catch(() => {});
     }, 30 * 60 * 1000);
+  }
+});
+
+// SILENT INSTALL ON QUIT: Release file locks before NSIS executes
+app.on('before-quit', (e) => {
+  if (isUpdateDownloaded && !isQuittingForUpdate) {
+    isQuittingForUpdate = true;
+    e.preventDefault(); // Stop immediate exit to destroy windows & unlock files
+
+    console.log('[AutoUpdater] Destroying windows to release file locks on Kestric.exe...');
+    BrowserWindow.getAllWindows().forEach((w) => {
+      try {
+        w.removeAllListeners('close');
+        w.destroy();
+      } catch (_) {}
+    });
+
+    // 800ms grace period for Windows kernel to release locks on binaries
+    setTimeout(() => {
+      console.log('[AutoUpdater] Running silent background install...');
+      autoUpdater.quitAndInstall(true, false);
+
+      // Force terminate after spawn to ensure no zombie processes linger
+      setTimeout(() => {
+        app.exit(0);
+      }, 1200);
+    }, 800);
   }
 });
 
