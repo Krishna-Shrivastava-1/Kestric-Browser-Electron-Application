@@ -1,6 +1,6 @@
 {
   "name": "kestric",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Kestric Web Browser",
   "main": "electron/main.js",
   "type": "commonjs",
