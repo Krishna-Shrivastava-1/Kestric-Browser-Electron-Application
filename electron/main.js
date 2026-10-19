@@ -267,12 +267,12 @@
 
 
 
-
 // main.js
 const { app, BrowserWindow, session, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
+const { exec } = require('child_process');
 
 // 1. HIGH-PERFORMANCE, STABLE CHROMIUM FLAGS
 app.enableSandbox();
@@ -314,7 +314,17 @@ function registerIpcHandlers() {
   registerSecurityIpc();
 }
 
-// Semver strict comparison helper (strips any 'v' prefixes)
+// --- PERMANENT, PROTECTED SYSTEM UPDATE STATE ---
+const STATE_FILE = path.join(app.getPath('userData'), '.kestric-system-update.json');
+
+// Make file hidden on Windows so users cannot see or modify it in File Explorer
+function protectFile(filePath) {
+  if (process.platform === 'win32') {
+    exec(`attrib +h "${filePath}"`, () => {});
+  }
+}
+
+// Strict semver comparator
 function isNewerVersion(remote, local) {
   if (!remote || !local) return false;
   const clean = (v) => String(v).replace(/^v/, '').trim();
@@ -329,44 +339,77 @@ function isNewerVersion(remote, local) {
   return false;
 }
 
-// Purges any cached installer files across all possible AppData locations
+function readUpdateState() {
+  const currentVer = app.getVersion();
+  const fallback = {
+    installedVersion: currentVer,
+    pendingUpdateVersion: null,
+    justUpdated: false,
+  };
+
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      return { ...fallback, ...data };
+    }
+  } catch (err) {
+    console.warn('[State] Initializing new system state file.');
+  }
+
+  writeUpdateState(fallback);
+  return fallback;
+}
+
+function writeUpdateState(state) {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    protectFile(STATE_FILE);
+  } catch (err) {
+    console.error('[State] Failed to persist state:', err);
+  }
+}
+
+// Wipe any leftover installer temp files to prevent infinite loops
 function purgeAllUpdaterCaches() {
   const localAppData = process.env.LOCALAPPDATA || '';
-  const possibleDirs = [
+  const folders = [
     path.join(localAppData, 'Kestric-updater'),
     path.join(localAppData, 'kestric-updater'),
     path.join(app.getPath('userData'), '../Kestric-updater'),
     path.join(app.getPath('userData'), '../kestric-updater'),
   ];
 
-  possibleDirs.forEach((dir) => {
+  folders.forEach((dir) => {
     try {
       if (fs.existsSync(dir)) {
-        console.log('[AutoUpdater] Purging installer cache:', dir);
         fs.rmSync(dir, { recursive: true, force: true });
       }
     } catch (_) {}
   });
 }
 
-// Tracks whether the app was just updated to trigger the Chrome toast in page.js
-let appWasJustUpdated = false;
+// State Verification on Launch
+let updateState = readUpdateState();
+const currentVersion = app.getVersion();
 
-function checkAppUpdateStatus() {
-  const versionFile = path.join(app.getPath('userData'), 'app-version.json');
-  const currentVersion = app.getVersion();
-
-  try {
-    if (fs.existsSync(versionFile)) {
-      const data = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
-      if (data.version && isNewerVersion(currentVersion, data.version)) {
-        appWasJustUpdated = true;
-      }
-    }
-    fs.writeFileSync(versionFile, JSON.stringify({ version: currentVersion }), 'utf8');
-  } catch (err) {
-    console.error('[VersionCheck] Error:', err);
+if (isNewerVersion(currentVersion, updateState.installedVersion)) {
+  // App was legitimately updated! Flag it for the toast
+  updateState.justUpdated = true;
+  updateState.installedVersion = currentVersion;
+  updateState.pendingUpdateVersion = null;
+  writeUpdateState(updateState);
+  purgeAllUpdaterCaches();
+} else {
+  // Always keep installedVersion synced with the compiled package.json
+  updateState.installedVersion = currentVersion;
+  if (updateState.pendingUpdateVersion && !isNewerVersion(updateState.pendingUpdateVersion, currentVersion)) {
+    updateState.pendingUpdateVersion = null;
+    purgeAllUpdaterCaches();
   }
+  writeUpdateState(updateState);
 }
 
 function getCleanUserAgent() {
@@ -379,25 +422,19 @@ function getCleanUserAgent() {
   return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
 }
 
-// Updater state tracking
-let isUpdateDownloaded = false;
-let downloadedTargetVersion = null;
-let isQuittingForUpdate = false;
+// Guard flags: ONLY allow quit if the user deliberately closed all windows
+let isUserClosingApp = false;
+let isApplyingSilentUpdate = false;
 
 app.whenReady().then(() => {
-  // 1. Check if we just launched after a legitimate update
-  checkAppUpdateStatus();
-
-  // 2. If app is already updated, purge old disk cache so it NEVER reinstalls
-  if (appWasJustUpdated) {
-    purgeAllUpdaterCaches();
-  }
-
-  // 3. Register IPC handler for page.js
+  // 1. IPC Handler: Next.js page.js checks this on mount to show the toast
   ipcMain.handle('check-was-updated', () => {
-    const result = appWasJustUpdated;
-    appWasJustUpdated = false; // Only show once per update
-    return { wasUpdated: result, version: app.getVersion() };
+    const showToast = updateState.justUpdated;
+    if (showToast) {
+      updateState.justUpdated = false;
+      writeUpdateState(updateState);
+    }
+    return { wasUpdated: showToast, version: currentVersion };
   });
 
   const cleanUA = getCleanUserAgent();
@@ -447,60 +484,58 @@ app.whenReady().then(() => {
     downloadManager.setMainWindow(mainWindow);
   }
 
-  // --- 100% SILENT CHROME-STYLE BACKGROUND AUTO-UPDATER ---
+  // --- SILENT BACKGROUND AUTO-UPDATER ENGINE ---
   if (app.isPackaged) {
+    // Strictly disable automatic closures and prompts
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
 
     autoUpdater.on('update-available', (info) => {
-      const currentVersion = app.getVersion();
-      console.log(`[AutoUpdater] Current: ${currentVersion} | Available: ${info.version}`);
+      console.log(`[AutoUpdater] Current: ${currentVersion} | GitHub Release: ${info.version}`);
 
-      // STRICT CHECK: Remote MUST be higher than current version
+      // NEVER download if GitHub release is not strictly newer than package.json
       if (!isNewerVersion(info.version, currentVersion)) {
-        console.log('[AutoUpdater] Remote version is not newer. Purging cache and ignoring.');
+        console.log('[AutoUpdater] App is already up to date. Purging cache.');
         purgeAllUpdaterCaches();
+        updateState.pendingUpdateVersion = null;
+        writeUpdateState(updateState);
         return;
       }
 
-      console.log(`[AutoUpdater] Downloading update v${info.version} in background...`);
+      console.log(`[AutoUpdater] Downloading update v${info.version} silently in background...`);
       autoUpdater.downloadUpdate().catch((err) => {
-        console.error('[AutoUpdater] Download error:', err);
+        console.error('[AutoUpdater] Download failed:', err);
       });
     });
 
     autoUpdater.on('update-not-available', () => {
-      console.log('[AutoUpdater] Kestric is up to date.');
+      console.log('[AutoUpdater] App is up to date.');
       purgeAllUpdaterCaches();
+      updateState.pendingUpdateVersion = null;
+      writeUpdateState(updateState);
     });
 
     autoUpdater.on('error', (err) => {
       console.warn('[AutoUpdater] Error:', err ? err.message : err);
     });
 
-    // CRITICAL FIX: Verify version before accepting downloaded update!
+    // When downloaded: record to protected JSON file, NEVER close the window!
     autoUpdater.on('update-downloaded', (info) => {
-      const currentVersion = app.getVersion();
-      console.log(`[AutoUpdater] update-downloaded triggered with version: ${info.version}`);
-
-      // If the cached download is NOT newer than what we are already running, PURGE IT!
-      if (!isNewerVersion(info.version, currentVersion)) {
-        console.log('[AutoUpdater] Cached update is NOT newer. Purging disk cache to prevent install loop.');
+      if (isNewerVersion(info.version, currentVersion)) {
+        console.log(`[AutoUpdater] v${info.version} is verified. Waiting for natural user exit.`);
+        updateState.pendingUpdateVersion = info.version;
+        writeUpdateState(updateState);
+      } else {
         purgeAllUpdaterCaches();
-        isUpdateDownloaded = false;
-        downloadedTargetVersion = null;
-        return;
+        updateState.pendingUpdateVersion = null;
+        writeUpdateState(updateState);
       }
-
-      console.log(`[AutoUpdater] Valid update v${info.version} ready. Will install silently on next exit.`);
-      isUpdateDownloaded = true;
-      downloadedTargetVersion = info.version;
     });
 
-    // Check 20 seconds after opening
+    // Check 25 seconds after launch (will NEVER kill the browser)
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch(() => {});
-    }, 20000);
+    }, 25000);
 
     // Recheck every 30 minutes
     setInterval(() => {
@@ -509,18 +544,32 @@ app.whenReady().then(() => {
   }
 });
 
-// SILENT INSTALL ON NATURAL EXIT ONLY
+// User clicked 'X' on the browser window
+app.on('window-all-closed', () => {
+  isUserClosingApp = true;
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// Guarded Quit: Only executes silent update when USER actually closes the app
 app.on('before-quit', (e) => {
-  const currentVersion = app.getVersion();
-  const shouldInstall = isUpdateDownloaded && 
-                        downloadedTargetVersion && 
-                        isNewerVersion(downloadedTargetVersion, currentVersion);
+  // If something tries to close the app while the user is still browsing, BLOCK IT!
+  if (!isUserClosingApp && BrowserWindow.getAllWindows().length > 0) {
+    console.warn('[AutoUpdater] Blocked premature shutdown attempt while user is browsing.');
+    e.preventDefault();
+    return;
+  }
 
-  if (shouldInstall && !isQuittingForUpdate) {
-    isQuittingForUpdate = true;
-    e.preventDefault(); // Stop default quit to close processes and release file locks first
+  const state = readUpdateState();
+  const hasValidUpdate = state.pendingUpdateVersion && 
+                         isNewerVersion(state.pendingUpdateVersion, app.getVersion());
 
-    console.log('[AutoUpdater] Closing all windows to release file locks...');
+  if (hasValidUpdate && !isApplyingSilentUpdate) {
+    isApplyingSilentUpdate = true;
+    e.preventDefault(); // Pause quit to destroy windows & unlock Kestric.exe
+
+    console.log('[AutoUpdater] Applying silent update in background...');
     BrowserWindow.getAllWindows().forEach((w) => {
       try {
         w.removeAllListeners('close');
@@ -528,11 +577,9 @@ app.on('before-quit', (e) => {
       } catch (_) {}
     });
 
-    // 800ms grace period so Windows releases Kestric.exe file lock,
-    // ensuring NSIS runs 100% silently without "Please wait" dialog
+    // 800ms grace period for Windows to release file locks
     setTimeout(() => {
-      console.log('[AutoUpdater] Executing silent install...');
-      // isSilent: true (suppresses all dialogs), isForceRunAfter: false (doesn't force open immediately)
+      // isSilent: true (no wizard UI), isForceRunAfter: false (do not relaunch immediately)
       autoUpdater.quitAndInstall(true, false);
 
       setTimeout(() => {
@@ -544,12 +591,9 @@ app.on('before-quit', (e) => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
+    isUserClosingApp = false;
     const win = createMainWindow();
     const mainWindow = win || (typeof getMainWindow === 'function' ? getMainWindow() : BrowserWindow.getAllWindows()[0]);
     if (mainWindow) downloadManager.setMainWindow(mainWindow);
   }
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
 });
