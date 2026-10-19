@@ -60,7 +60,23 @@
 //   return false;
 // }
 
-// // Tracks whether the app was just updated to show the Chrome-like toast
+// // Purges stuck pending installers from AppData that trigger infinite loops
+// function purgeStaleUpdaterCache() {
+//   try {
+//     const localAppData = process.env.LOCALAPPDATA || '';
+//     if (localAppData) {
+//       const pendingDir = path.join(localAppData, 'kestric-updater', 'pending');
+//       if (fs.existsSync(pendingDir)) {
+//         console.log('[AutoUpdater] Purging stuck pending updater cache:', pendingDir);
+//         fs.rmSync(pendingDir, { recursive: true, force: true });
+//       }
+//     }
+//   } catch (err) {
+//     console.warn('[AutoUpdater] Failed to purge pending cache:', err.message);
+//   }
+// }
+
+// // Tracks whether the app was just updated to trigger the Chrome toast
 // let appWasJustUpdated = false;
 
 // function checkAppUpdateStatus() {
@@ -92,15 +108,19 @@
 
 // // Flags to prevent recursive install loops
 // let isUpdateDownloaded = false;
-// let isInstallingUpdate = false;
+// let isQuittingForUpdate = false;
 
 // app.whenReady().then(() => {
+//   // 1. Wipe any leftover/corrupt update files that cause constant reinstalling
+//   purgeStaleUpdaterCache();
+
+//   // 2. Check if this is the first launch after a successful update
 //   checkAppUpdateStatus();
 
-//   // IPC Handler: Next.js will ask if the browser was updated when it finishes mounting
+//   // 3. Register IPC handler for page.js to query update status
 //   ipcMain.handle('check-was-updated', () => {
 //     const result = appWasJustUpdated;
-//     appWasJustUpdated = false; // Only show once
+//     appWasJustUpdated = false; // Show only once
 //     return { wasUpdated: result, version: app.getVersion() };
 //   });
 
@@ -160,9 +180,10 @@
 //       const currentVersion = app.getVersion();
 //       console.log(`[AutoUpdater] Current: ${currentVersion} | Available: ${info.version}`);
 
-//       // STRICT CHECK: Never download if remote is not strictly higher
+//       // Strict semver check: Never download if the remote version is equal or lower
 //       if (!isNewerVersion(info.version, currentVersion)) {
 //         console.log('[AutoUpdater] Remote version is not newer. Ignoring.');
+//         purgeStaleUpdaterCache();
 //         return;
 //       }
 
@@ -197,13 +218,30 @@
 //   }
 // });
 
-// // SILENT INSTALL ON QUIT (Prevent recursive loop)
+// // SILENT INSTALL ON QUIT: Release file locks before NSIS executes
 // app.on('before-quit', (e) => {
-//   if (isUpdateDownloaded && !isInstallingUpdate) {
-//     isInstallingUpdate = true;
-//     console.log('[AutoUpdater] Applying update silently before exit...');
-//     // isSilent: true, isForceRunAfter: false (Quiet background install like Chrome)
-//     autoUpdater.quitAndInstall(true, false);
+//   if (isUpdateDownloaded && !isQuittingForUpdate) {
+//     isQuittingForUpdate = true;
+//     e.preventDefault(); // Stop immediate exit to destroy windows & unlock files
+
+//     console.log('[AutoUpdater] Destroying windows to release file locks on Kestric.exe...');
+//     BrowserWindow.getAllWindows().forEach((w) => {
+//       try {
+//         w.removeAllListeners('close');
+//         w.destroy();
+//       } catch (_) {}
+//     });
+
+//     // 800ms grace period for Windows kernel to release locks on binaries
+//     setTimeout(() => {
+//       console.log('[AutoUpdater] Running silent background install...');
+//       autoUpdater.quitAndInstall(true, false);
+
+//       // Force terminate after spawn to ensure no zombie processes linger
+//       setTimeout(() => {
+//         app.exit(0);
+//       }, 1200);
+//     }, 800);
 //   }
 // });
 
@@ -218,6 +256,8 @@
 // app.on('window-all-closed', () => {
 //   if (process.platform !== 'darwin') app.quit();
 // });
+
+
 
 
 
@@ -274,10 +314,10 @@ function registerIpcHandlers() {
   registerSecurityIpc();
 }
 
-// Semver safe comparison helper
+// Semver strict comparison helper (strips any 'v' prefixes)
 function isNewerVersion(remote, local) {
   if (!remote || !local) return false;
-  const clean = (v) => v.replace(/^v/, '').trim();
+  const clean = (v) => String(v).replace(/^v/, '').trim();
   const rParts = clean(remote).split('.').map((n) => parseInt(n, 10) || 0);
   const lParts = clean(local).split('.').map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < 3; i++) {
@@ -289,23 +329,27 @@ function isNewerVersion(remote, local) {
   return false;
 }
 
-// Purges stuck pending installers from AppData that trigger infinite loops
-function purgeStaleUpdaterCache() {
-  try {
-    const localAppData = process.env.LOCALAPPDATA || '';
-    if (localAppData) {
-      const pendingDir = path.join(localAppData, 'kestric-updater', 'pending');
-      if (fs.existsSync(pendingDir)) {
-        console.log('[AutoUpdater] Purging stuck pending updater cache:', pendingDir);
-        fs.rmSync(pendingDir, { recursive: true, force: true });
+// Purges any cached installer files across all possible AppData locations
+function purgeAllUpdaterCaches() {
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const possibleDirs = [
+    path.join(localAppData, 'Kestric-updater'),
+    path.join(localAppData, 'kestric-updater'),
+    path.join(app.getPath('userData'), '../Kestric-updater'),
+    path.join(app.getPath('userData'), '../kestric-updater'),
+  ];
+
+  possibleDirs.forEach((dir) => {
+    try {
+      if (fs.existsSync(dir)) {
+        console.log('[AutoUpdater] Purging installer cache:', dir);
+        fs.rmSync(dir, { recursive: true, force: true });
       }
-    }
-  } catch (err) {
-    console.warn('[AutoUpdater] Failed to purge pending cache:', err.message);
-  }
+    } catch (_) {}
+  });
 }
 
-// Tracks whether the app was just updated to trigger the Chrome toast
+// Tracks whether the app was just updated to trigger the Chrome toast in page.js
 let appWasJustUpdated = false;
 
 function checkAppUpdateStatus() {
@@ -335,21 +379,24 @@ function getCleanUserAgent() {
   return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
 }
 
-// Flags to prevent recursive install loops
+// Updater state tracking
 let isUpdateDownloaded = false;
+let downloadedTargetVersion = null;
 let isQuittingForUpdate = false;
 
 app.whenReady().then(() => {
-  // 1. Wipe any leftover/corrupt update files that cause constant reinstalling
-  purgeStaleUpdaterCache();
-
-  // 2. Check if this is the first launch after a successful update
+  // 1. Check if we just launched after a legitimate update
   checkAppUpdateStatus();
 
-  // 3. Register IPC handler for page.js to query update status
+  // 2. If app is already updated, purge old disk cache so it NEVER reinstalls
+  if (appWasJustUpdated) {
+    purgeAllUpdaterCaches();
+  }
+
+  // 3. Register IPC handler for page.js
   ipcMain.handle('check-was-updated', () => {
     const result = appWasJustUpdated;
-    appWasJustUpdated = false; // Show only once
+    appWasJustUpdated = false; // Only show once per update
     return { wasUpdated: result, version: app.getVersion() };
   });
 
@@ -409,36 +456,51 @@ app.whenReady().then(() => {
       const currentVersion = app.getVersion();
       console.log(`[AutoUpdater] Current: ${currentVersion} | Available: ${info.version}`);
 
-      // Strict semver check: Never download if the remote version is equal or lower
+      // STRICT CHECK: Remote MUST be higher than current version
       if (!isNewerVersion(info.version, currentVersion)) {
-        console.log('[AutoUpdater] Remote version is not newer. Ignoring.');
-        purgeStaleUpdaterCache();
+        console.log('[AutoUpdater] Remote version is not newer. Purging cache and ignoring.');
+        purgeAllUpdaterCaches();
         return;
       }
 
-      console.log(`[AutoUpdater] Downloading update v${info.version} silently in background...`);
+      console.log(`[AutoUpdater] Downloading update v${info.version} in background...`);
       autoUpdater.downloadUpdate().catch((err) => {
         console.error('[AutoUpdater] Download error:', err);
       });
     });
 
     autoUpdater.on('update-not-available', () => {
-      console.log('[AutoUpdater] App is up to date.');
+      console.log('[AutoUpdater] Kestric is up to date.');
+      purgeAllUpdaterCaches();
     });
 
     autoUpdater.on('error', (err) => {
       console.warn('[AutoUpdater] Error:', err ? err.message : err);
     });
 
+    // CRITICAL FIX: Verify version before accepting downloaded update!
     autoUpdater.on('update-downloaded', (info) => {
-      console.log(`[AutoUpdater] Update v${info.version} downloaded silently.`);
+      const currentVersion = app.getVersion();
+      console.log(`[AutoUpdater] update-downloaded triggered with version: ${info.version}`);
+
+      // If the cached download is NOT newer than what we are already running, PURGE IT!
+      if (!isNewerVersion(info.version, currentVersion)) {
+        console.log('[AutoUpdater] Cached update is NOT newer. Purging disk cache to prevent install loop.');
+        purgeAllUpdaterCaches();
+        isUpdateDownloaded = false;
+        downloadedTargetVersion = null;
+        return;
+      }
+
+      console.log(`[AutoUpdater] Valid update v${info.version} ready. Will install silently on next exit.`);
       isUpdateDownloaded = true;
+      downloadedTargetVersion = info.version;
     });
 
-    // Check 15 seconds after opening
+    // Check 20 seconds after opening
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch(() => {});
-    }, 15000);
+    }, 20000);
 
     // Recheck every 30 minutes
     setInterval(() => {
@@ -447,13 +509,18 @@ app.whenReady().then(() => {
   }
 });
 
-// SILENT INSTALL ON QUIT: Release file locks before NSIS executes
+// SILENT INSTALL ON NATURAL EXIT ONLY
 app.on('before-quit', (e) => {
-  if (isUpdateDownloaded && !isQuittingForUpdate) {
-    isQuittingForUpdate = true;
-    e.preventDefault(); // Stop immediate exit to destroy windows & unlock files
+  const currentVersion = app.getVersion();
+  const shouldInstall = isUpdateDownloaded && 
+                        downloadedTargetVersion && 
+                        isNewerVersion(downloadedTargetVersion, currentVersion);
 
-    console.log('[AutoUpdater] Destroying windows to release file locks on Kestric.exe...');
+  if (shouldInstall && !isQuittingForUpdate) {
+    isQuittingForUpdate = true;
+    e.preventDefault(); // Stop default quit to close processes and release file locks first
+
+    console.log('[AutoUpdater] Closing all windows to release file locks...');
     BrowserWindow.getAllWindows().forEach((w) => {
       try {
         w.removeAllListeners('close');
@@ -461,15 +528,16 @@ app.on('before-quit', (e) => {
       } catch (_) {}
     });
 
-    // 800ms grace period for Windows kernel to release locks on binaries
+    // 800ms grace period so Windows releases Kestric.exe file lock,
+    // ensuring NSIS runs 100% silently without "Please wait" dialog
     setTimeout(() => {
-      console.log('[AutoUpdater] Running silent background install...');
+      console.log('[AutoUpdater] Executing silent install...');
+      // isSilent: true (suppresses all dialogs), isForceRunAfter: false (doesn't force open immediately)
       autoUpdater.quitAndInstall(true, false);
 
-      // Force terminate after spawn to ensure no zombie processes linger
       setTimeout(() => {
         app.exit(0);
-      }, 1200);
+      }, 1000);
     }, 800);
   }
 });
